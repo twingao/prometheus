@@ -30,7 +30,12 @@ Prometheus的主要特性：
 | IP | 主机名 | 安装软件 |
 | :------| :------ | :------ |
 | 192.168.1.69 | prometheus-node1 | prometheus, node-exporter, grafana |
-| 192.168.1.70 | prometheus-node2 | node-exporter, alertmanager |
+| 192.168.1.70 | prometheus-node2 | node-exporter, alertmanager, pushgateway |
+
+操作系统版本。
+
+    cat /etc/redhat-release
+    CentOS Linux release 7.7.1908 (Core)
 
 - ### 安装Prometheus
 
@@ -161,7 +166,7 @@ Prometheus的主要特性：
 
 ![](images/node-exporter-metrics.png)
 
-- ### 配置Prometheus，添加监控目标
+- ### 配置Prometheus
 
 scrape_configs块控制Prometheus监控的资源。 由于Prometheus还将自己的数据公开为HTTP端点，因此它可以抓取并监控自身的健康状况。 在默认配置中，有一个名为prometheus的作业，它会抓取Prometheus服务器公开的时间序列数据。该作业包含一个静态配置的目标，即端口9090上的localhost（此处改为本机地址192.168.1.69），监控数据从[http://192.168.1.69:9090/metrics](http://192.168.1.69:9090/metrics)抓取。
 
@@ -387,7 +392,6 @@ scrape_configs块控制Prometheus监控的资源。 由于Prometheus还将自己
 
 ![](images/prometheus-up-0.png)
 
-
 node_exporter服务停止后，Prometheus每隔评估周期evaluation_interval（15s）抓取一次，发现告警表达式up == 0为true之后，Prometheus会先将ServiceStatusAlert变成pengding状态。
 
 然后执行for子句，在下一个评估周期中，如果告警表达式仍然为true，则检查for的持续时间（1m）。如果没有超过持续时间，则等待下一个评估周期；如果超过了持续时间，则告警转换为Firing，生成通知并将其推送到Alertmanager。
@@ -482,3 +486,74 @@ Dashboard起名为"测试用Prometheus Dashboard"。
 
 ![](images/grafana-dashboard-test.png)
 
+### 安装Pushgateway
+
+下载[https://github.com/prometheus/pushgateway/releases/download/v1.2.0/pushgateway-1.2.0.linux-amd64.tar.gz](https://github.com/prometheus/pushgateway/releases/download/v1.2.0/pushgateway-1.2.0.linux-amd64.tar.gz)。然后上传pushgateway-1.2.0.linux-amd64.tar.gz并安装Pushgateway。
+
+    tar zxvf pushgateway-1.2.0.linux-amd64.tar.gz
+    mv pushgateway-1.2.0.linux-amd64 /usr/local/prometheus/pushgateway
+
+查看Pushgateway版本号。
+
+    /usr/local/prometheus/pushgateway/pushgateway --version
+    pushgateway, version 1.2.0 (branch: HEAD, revision: b7e0167e9574f4f88404dde9653ee1d3c940f2eb)
+      build user:       root@0e823ccfff84
+      build date:       20200311-18:51:01
+      go version:       go1.13.8
+
+设置自启动服务。
+
+    vi /etc/systemd/system/pushgateway.service
+    [Unit]
+    Description=Pushgateway
+    After=network.target
+
+    [Service]
+    Type=simple
+    User=root
+    ExecStart=/usr/local/prometheus/pushgateway/pushgateway
+    Restart=on-failure
+
+    [Install]
+    WantedBy=multi-user.target
+
+    systemctl start pushgateway.service
+    systemctl status pushgateway.service
+    systemctl enable pushgateway.service
+
+更新Prometheus配置。
+
+    vi /usr/local/prometheus/prometheus/prometheus.yml
+    ......
+      - job_name: 'pushgateway'
+        static_configs:
+        - targets: ['192.168.1.70:9091']
+          labels:
+            instance: prom-node2
+    ......
+
+    systemctl restart prometheus
+
+通常可以通过调用client libraries导入指标数据，也可以通过API向Pushgateway导入指标数据。
+
+    echo "some_metrics 3.14" | curl --data-binary @- http://192.168.1.70:9091/metrics/job/some_job/instance/some_instance
+
+访问Pushgateway，[http://192.168.1.70:9091/](http://192.168.1.70:9091/)。可以看到刚才导入的指标数据。
+
+![](images/pushgateway-pushgateway.png)
+
+可以在Prometheus中查看指标数据，也就是Prometheus已经从Pushgateway抓取到了数据。
+
+    some_metrics{exported_instance="some_instance",exported_job="some_job",instance="prom-node2",job="pushgateway"}             3.14
+
+也可以一次性导入多个指标数据。
+
+    cat <<EOF | curl --data-binary @- http://192.168.1.70:9091/metrics/job/some_job/instance/some_instance
+    # TYPE some_metrics_2 counter
+    some_metrics_2{label_name="label_value_1"} 33
+    some_metrics_2{label_name="label_value_2"} 33
+    # HELP some_metrics_3 some metrics 3
+    # TYPE some_metrics_3 gauge
+    some_metrics_3{label_name="label_value_1"} 22
+    some_metrics_3{label_name="label_value_2"} 35
+    EOF

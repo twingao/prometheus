@@ -6,3 +6,10 @@
 
 - #### [Helm部署Prometheus Operator和自定义监控](helm-prometheus-operator.md)
 
+- #### [Prometheus配置说明](prometheus-configuration.md)
+
+- #### [Grafana匿名登录下通过iframe和业务系统集成](grafana-embedding.md)
+
+- #### [Prometheus Relabel配置](prometheus-relabel-configs.md)
+
+- #### [Prometheus高可用部署](prometheus-ha.md)

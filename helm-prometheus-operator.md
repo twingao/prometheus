@@ -6,12 +6,30 @@
 
     kubectl create namespace monitoring
 
+为了监控etcd，需要为证书创建secret。
+
+> Prometheus Operator定义了etcd的ServiceMonitor，但需要https才能访问metrics，如果不导入证书，将无法访问，导致etcd无法监控。
+
+    kubectl create secret generic etcd-certs -nmonitoring \
+      --from-file=/etc/kubernetes/pki/etcd/healthcheck-client.crt \
+      --from-file=/etc/kubernetes/pki/etcd/healthcheck-client.key \
+      --from-file=/etc/kubernetes/pki/etcd/ca.crt
+
+由于kube-proxy绑定了127.0.0.1，无法访问，改为绑定0.0.0.0。
+
+
+
+
 Helm v3安装时，在crds/目录中的清单文件会自动提交给Kubernetes。
 
     helm install prometheus stable/prometheus-operator \
       --namespace monitoring \
       --set prometheusOperator.createCustomResource=false \
-      --set prometheusOperator.cleanupCustomResource=true
+      --set kubeEtcd.serviceMonitor.scheme=https \
+      --set kubeEtcd.serviceMonitor.caFile=/etc/prometheus/secrets/etcd-certs/ca.crt \
+      --set kubeEtcd.serviceMonitor.certFile=/etc/prometheus/secrets/etcd-certs/healthcheck-client.crt \
+      --set kubeEtcd.serviceMonitor.keyFile=/etc/prometheus/secrets/etcd-certs/healthcheck-client.key \
+      --set prometheus.prometheusSpec.secrets={etcd-certs}
 
 查看Kubernetes资源。
 
@@ -192,9 +210,13 @@ Helm v3安装时，在crds/目录中的清单文件会自动提交给Kubernetes�
     192.168.1.55 alert.twingao.com
     # Prometheus End
 
-访问Prometheus，并切换到Targets页面，地址[https://prom.twingao.com:32271/targets](https://prom.twingao.com:32271/targets)。没有看出来monitoring/prometheus-prometheus-oper-kube-etcd和monitoring/prometheus-prometheus-oper-kube-proxy出问题的原因，但可以看出使用node地址+Service端口访问，这是无法访问的。
+访问Prometheus，并切换到Targets页面，地址[https://prom.twingao.com:32271/targets](https://prom.twingao.com:32271/targets)。
 
-monitoring/prometheus-prometheus-oper-kubelet是通过https-metrics（10250）端口访问的。monitoring/prometheus-prometheus-oper-kube-controller-manager和monitoring/prometheus-prometheus-oper-kube-scheduler已经配置正确。
+没有看出来monitoring/prometheus-prometheus-oper-kube-proxy出问题的原因，但可以看出使用node地址+Service端口访问，这是无法访问的。monitoring/prometheus-prometheus-oper-kubelet是通过https-metrics（10250）端口访问的。monitoring/prometheus-prometheus-oper-kube-controller-manager和monitoring/prometheus-prometheus-oper-kube-scheduler已经配置正确。
+
+![](images/prometheus-targets-helm-etcd.png)
+
+如果没有在helm命令行配置kubeEtcd.serviceMonitor参数，monitoring/prometheus-prometheus-oper-kube-etcd是无法监控的，如下图。
 
 ![](images/prometheus-targets-helm.png)
 

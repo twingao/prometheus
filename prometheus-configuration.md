@@ -1,4 +1,248 @@
-# Prometheus Operator部署和自定义监控
+# Prometheus配置说明
+
+
+
+一、配置文件
+要指定要加载的配置文件，请使用--config.file标志。
+
+该文件以YAML格式编写，由下面描述的方案定义。 括号表示参数是可选的。 对于非列表参数，该值设置为指定的默认值。
+
+通用占位符定义如下：
+
+- \<boolean>：一个可以取值为true或false的布尔值
+- \<duration>：与正则表达式匹配的持续时间[0-9] +（ms | [smhdwy]）
+- \<labelname>：与正则表达式匹配的字符串[a-zA-Z _] [a-zA-Z0-9 _] *
+- \<labelvalue>：一串unicode字符
+- \<filename>：当前工作目录中的有效路径
+- \<host>：由主机名或IP后跟可选端口号组成的有效字符串
+- \<path>：有效的URL路径
+- \<scheme>：一个可以取值http或https的字符串
+- \<string>：常规字符串
+- \<secret>：一个秘密的常规字符串，例如密码
+- \<tmpl_string>：在使用前进行模板扩展的字符串
+
+其他占位符是单独指定的。
+
+
+
+### 全局配置
+
+全局配置指定在所有其他配置上下文中有效的参数。它们还可用作其他配置段的默认值。
+
+    global:
+      # 默认情况下抓取目标的频率.
+      [ scrape_interval: <duration> | default = 1m ]
+    
+      # 抓取超时时间.
+      [ scrape_timeout: <duration> | default = 10s ]
+    
+      # 评估规则的频率.
+      [ evaluation_interval: <duration> | default = 1m ]
+    
+      # 与外部系统通信时添加到任何时间序列或警报的标签
+      #（联合，远程存储，Alertma# nager）.
+      external_labels:
+        [ <labelname>: <labelvalue> ... ]
+    
+    # 规则文件指定了一个globs列表. 
+    # 从所有匹配的文件中读取规则和警报.
+    rule_files:
+      [ - <filepath_glob> ... ]
+    
+    # 抓取配置列表.
+    scrape_configs:
+      [ - <scrape_config> ... ]
+    
+    # 警报指定与Alertmanager相关的设置.
+    alerting:
+      alert_relabel_configs:
+        [ - <relabel_config> ... ]
+      alertmanagers:
+        [ - <alertmanager_config> ... ]
+    
+    # 与远程写入功能相关的设置.
+    remote_write:
+      [ - <remote_write> ... ]
+    
+    # 与远程读取功能相关的设置.
+    remote_read:
+      [ - <remote_read> ... ]
+
+### \<scrape_config>
+
+\<scrape_config>部分指定一组描述如何刮除它们的目标和参数。 在一般情况下，一个scrape配置指定单个作业。 在高级配置中，这可能会改变。
+
+目标可以通过\<static_configs>参数静态配置，也可以使用其中一种支持的服务发现机制动态发现。
+
+此外，\<relabel_configs>允许在抓取之前对任何目标及其标签进行高级修改。
+
+其中\<job_name>在所有scrape配置中必须是唯一的。
+
+
+    # 默认分配给已抓取指标的job名称。
+    job_name: <job_name>
+    
+    # 从job中抓取目标的频率.
+    [ scrape_interval: <duration> | default = <global_config.scrape_interval> ]
+    
+    # 抓取此job时，每次抓取超时时间.
+    [ scrape_timeout: <duration> | default = <global_config.scrape_timeout> ]
+    
+    # 从目标获取指标的HTTP资源路径.
+    [ metrics_path: <path> | default = /metrics ]
+    
+    # honor_labels控制Prometheus如何处理已经存在于已抓取数据中的标签与Prometheus将附加服务器端的标签之间的冲突（"job"和"instance"标签，手动配置的目标标签以及服务发现实现生成的标签）。
+    # 
+    # 如果honor_labels设置为"true"，则通过保留已抓取数据的标签值并忽略冲突的服务器端标签来解决标签冲突。
+    #
+    # 如果honor_labels设置为"false"，则通过将已抓取数据中的冲突标签重命名为"exported_ <original-label>"（例如"exported_instance"，"exported_job"）然后附加服务器端标签来解决标签冲突。 这对于联合等用例很有用，其中应保留目标中指定的所有标签。
+    # 
+    # 请注意，任何全局配置的"external_labels"都不受此设置的影响。 在与外部系统通信时，它们始终仅在时间序列尚未具有给定标签时应用，否则将被忽略。
+    # 
+    [ honor_labels: <boolean> | default = false ]
+    
+    # 配置用于请求的协议方案.
+    [ scheme: <scheme> | default = http ]
+    
+    # 可选的HTTP URL参数.
+    params:
+      [ <string>: [<string>, ...] ]
+    
+    # 使用配置的用户名和密码在每个scrape请求上设置`Authorization`标头。 password和password_file是互斥的。
+    basic_auth:
+      [ username: <string> ]
+      [ password: <secret> ]
+      [ password_file: <string> ]
+    
+    # 使用配置的承载令牌在每个scrape请求上设置`Authorization`标头。 它`bearer_token_file`和是互斥的。
+    [ bearer_token: <secret> ]
+    
+    # 使用配置的承载令牌在每个scrape请求上设置`Authorization`标头。 它`bearer_token`和是互斥的。
+    [ bearer_token_file: /path/to/bearer/token/file ]
+    
+    # 配置scrape请求的TLS设置.
+    tls_config:
+      [ <tls_config> ]
+    
+    # 可选的代理URL.
+    [ proxy_url: <string> ]
+    
+    # Azure服务发现配置列表.
+    azure_sd_configs:
+      [ - <azure_sd_config> ... ]
+    
+    # Consul服务发现配置列表.
+    consul_sd_configs:
+      [ - <consul_sd_config> ... ]
+    
+    # DNS服务发现配置列表。
+    dns_sd_configs:
+      [ - <dns_sd_config> ... ]
+    
+    # EC2服务发现配置列表。
+    ec2_sd_configs:
+      [ - <ec2_sd_config> ... ]
+    
+    # OpenStack服务发现配置列表。
+    openstack_sd_configs:
+      [ - <openstack_sd_config> ... ]
+    
+    # 文件服务发现配置列表。
+    file_sd_configs:
+      [ - <file_sd_config> ... ]
+    
+    # GCE服务发现配置列表。
+    gce_sd_configs:
+      [ - <gce_sd_config> ... ]
+    
+    # Kubernetes服务发现配置列表。
+    kubernetes_sd_configs:
+      [ - <kubernetes_sd_config> ... ]
+    
+    # Marathon服务发现配置列表。
+    marathon_sd_configs:
+      [ - <marathon_sd_config> ... ]
+    
+    # AirBnB的神经服务发现配置列表。
+    nerve_sd_configs:
+      [ - <nerve_sd_config> ... ]
+    
+    # Zookeeper Serverset服务发现配置列表。
+    serverset_sd_configs:
+      [ - <serverset_sd_config> ... ]
+    
+    # Triton服务发现配置列表。
+    triton_sd_configs:
+      [ - <triton_sd_config> ... ]
+    
+    # 此job的标记静态配置目标列表。
+    static_configs:
+      [ - <static_config> ... ]
+    
+    # 目标重新标记配置列表。
+    relabel_configs:
+      [ - <relabel_config> ... ]
+    
+    # 度量标准重新配置列表。
+    metric_relabel_configs:
+      [ - <relabel_config> ... ]
+    
+    # 对每个将被接受的样本数量的每次抓取限制。
+    # 如果在度量重新标记后存在超过此数量的样本，则整个抓取将被视为失败。 0表示没有限制。
+    [ sample_limit: <int> | default = 0 ]
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 - ### 说明
 
@@ -11,36 +255,6 @@ Operator是最核心的部分，作为一个控制器，他会去创建Prometheu
 其中创建的Prometheus这种资源对象就是作为Prometheus Server存在，而PodMonitor和ServiceMonitor就是exporter的各种抽象，是用来提供专门提供metrics数据接口的工具，Prometheus就是通过PodMonitor和ServiceMonitor提供的metrics数据接口去pull数据的，当然alertmanager这种资源对象就是对应的AlertManager的抽象，而PrometheusRule是用来被Prometheus实例使用的报警规则文件。
 
 这样我们要在集群中监控什么数据，就变成了直接去操作 Kubernetes 集群的资源对象了，是不是方便很多了。上图中的 Service 和 ServiceMonitor 都是 Kubernetes 的资源，一个 ServiceMonitor 可以通过 labelSelector 的方式去匹配一类 Service，Prometheus 也可以通过 labelSelector 去匹配多个ServiceMonitor。
-
-
-
-监控Kubernetes集群主要从一下四个方面进行。
-
-- 基础设施层：监控各个主机服务器资源，如CPU、内存、网络吞吐和带宽占用、磁盘I/O和磁盘使用率等指标。
-
-- Kubernetes集群：监控Kubernetes集群本身的关键指标，包括各个集群服务器组件、容器运行时、Kubernetes各种资源状态等。
-
-- Kubernetes集群上部署的应用：监控部署在Kubernetes集群上的应用、中间件、数据库、JVM、Go GC等。
-
-- 黑盒监控Ingress和Service：
-
-  - 内部服务负载均衡（Service）：在集群内，通过Service在集群暴露应用功能，集群内应用和应用之间访问时提供内部的负载均衡。通过Blackbox Exporter探测Service的可用性，确保当Service不可用时能够快速得到告警通知。
-
-  - 外部访问入口（Ingress）：通过Ingress提供集群外的访问入口，从而可以使外部客户端能够访问到部署在Kubernetes集群内的服务。因此也需要通过Blackbox Exporter对Ingress的可用性进行探测，确保外部用户能够正常访问集群内的功能。
-
-- #### 基础设施层
-
-Prometheus监控基础设施层一般采用node_exporter，为了能够采集集群中各个节点的资源使用情况，使用Kubernetes的DaemonSet控制器部署node_exporter，DaemonSet会确保在集群中所有节点上运行一个唯一的Pod实例。
-
-为了node_exporter能够访问宿主机，所以指定了hostNetwork和HostPID，让Pod实例能够以主机网络以及系统进程的形式运行。并创建了node_exporter相应的Service，这样通过Service就可以访问到对应的node_exporter实例。
-
-
-
-
-
-
-
-
 
 - ### 安装
 
@@ -68,7 +282,7 @@ Prometheus监控基础设施层一般采用node_exporter，为了能够采集集
     service/prometheus-operator created
     serviceaccount/prometheus-operator created
 
-可以看出，setup/目录只安装了Prometheus Operator，并创建了所需的CRDs。
+查看创建的CRDs。
 
     kubectl get crd | grep coreos
     alertmanagers.monitoring.coreos.com     2020-03-26T12:27:08Z
@@ -245,21 +459,7 @@ Prometheus监控基础设施层一般采用node_exporter，为了能够采集集
     service/kube-controller-manager created
     service/kube-scheduler created
 
-主要做了几件事情：
-
-1. 创建了prometheus.monitoring.coreos.com/k8s资源，Prometheus Operator会根据该资源创建prometheus实例。
-
-2. 创建了alertmanager.monitoring.coreos.com/main资源，Prometheus Operator会根据该资源创建alertmanager实例。
-
-3. 安装Grafana，并且使用configmap装载了大量预置的Dashboard。
-
-4. 安装node-exporter、kube-metrics-server等导出器。
-
-5. 创建了prometheusrule.monitoring.coreos.com/prometheus-k8s-rules，导入了告警规则。
-
-6. 安装为了监控Kubernetes底层组件、node-exporter、kube-metrics-server、prometheus、alertmanager、grafana等等，创建对应的ServiceMonitor。
-
-查看Kubernetes资源，可以看出prometheus-k8s和alertmanager-main的控制器类型为statefulset。
+查看Kubernetes资源，可以看出prometheus-k8s和alertmanager-main的控制器类型为statefulset，
 
     kubectl get all -nmonitoring
     NAME                                      READY   STATUS    RESTARTS   AGE
